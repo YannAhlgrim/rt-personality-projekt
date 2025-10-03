@@ -1,11 +1,21 @@
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from pydantic import BaseModel
 import whisper
 import tempfile
 import os
 from mangum import Mangum
 
-app = Flask(__name__)
+app = FastAPI()
 model = None
+
+# Pydantic models for request/response
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+    model_loaded: bool
+
+class TranscribeResponse(BaseModel):
+    text: str
 
 def get_whisper_model():
     global model
@@ -13,45 +23,37 @@ def get_whisper_model():
         model = whisper.load_model("small")  # or medium/large
     return model
 
-@app.route("/health", methods=["GET"])
+@app.get("/health", response_model=HealthResponse)
 def health_check():
     try:
         # Test if Whisper model can be loaded
         whisper_model = get_whisper_model()
-        return jsonify({
-            "status": "healthy",
-            "service": "whisper-transcription",
-            "model_loaded": whisper_model is not None
-        }), 200
+        return HealthResponse(
+            status="healthy",
+            service="whisper-transcription",
+            model_loaded=whisper_model is not None
+        )
     except Exception as e:
-        return jsonify({
-            "status": "unhealthy",
-            "service": "whisper-transcription",
-            "error": str(e)
-        }), 500
+        raise HTTPException(status_code=500, detail=f"Service unhealthy: {str(e)}")
 
-@app.route("/transcribe", methods=["POST"])
-def transcribe():
+@app.post("/transcribe", response_model=TranscribeResponse)
+async def transcribe(file: UploadFile = File(...)):
     tmp_path = None
     try:
-        if "file" not in request.files:
-            return jsonify({"error": "No file uploaded"}), 400
-
-        file = request.files["file"]
-
         # Save the uploaded file to a temporary location
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            file.save(tmp.name)
+            content = await file.read()
+            tmp.write(content)
             tmp_path = tmp.name
 
         # Pass the file path to Whisper
         whisper_model = get_whisper_model()
         result = whisper_model.transcribe(tmp_path)
 
-        return jsonify({"text": result["text"]})
+        return TranscribeResponse(text=result["text"])
 
     except Exception as e:
-        return jsonify({"error": f"Transcription failed: {str(e)}"}), 500
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
     finally:
         # Clean up temporary file
@@ -64,6 +66,7 @@ handler = Mangum(app)
 def lambda_handler(event, context):
     return handler(event, context)
 
-# For local testing
+# For local testing (not used in Lambda)
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8001, debug=True)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)

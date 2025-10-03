@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'RT Personality Project - Coqui TTS and Whisper Lambda Functions
+
+  '
+Globals:
+  Function:
+    Timeout: 300
+    MemorySize: 2048
+    Environment:
+      Variables:
+        PYTHONPATH: /var/task
+Resources:
+  CoquiTTSFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageUri: coquittsfunction:coqui-tts-v1
+      Events:
+        SynthesizeApi:
+          Type: Api
+          Properties:
+            Path: /synthesize
+            Method: post
+        HealthCheck:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: get
+    Metadata:
+      DockerContext: C:\Projects\personality-projekt\coquitts
+      DockerTag: coqui-tts-v1
+      Dockerfile: Dockerfile
+      SamResourceId: CoquiTTSFunction
+  WhisperFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageUri: whisperfunction:whisper-v1
+      Events:
+        TranscribeApi:
+          Type: Api
+          Properties:
+            Path: /transcribe
+            Method: post
+        HealthCheck:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: get
+    Metadata:
+      DockerContext: C:\Projects\personality-projekt\whisper
+      DockerTag: whisper-v1
+      Dockerfile: Dockerfile
+      SamResourceId: WhisperFunction
+Outputs:
+  CoquiTTSApi:
+    Description: API Gateway endpoint URL for Coqui TTS function
+    Value:
+      Fn::Sub: https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/synthesize
+  WhisperApi:
+    Description: API Gateway endpoint URL for Whisper function
+    Value:
+      Fn::Sub: https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/transcribe

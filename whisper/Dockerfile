@@ -19,11 +19,15 @@ RUN python -m pip install --upgrade pip setuptools wheel
 # Install Python packages separately to isolate issues
 RUN pip install --no-cache-dir torch==2.5.1 torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir git+https://github.com/openai/whisper.git
-RUN pip install --no-cache-dir flask mangum soundfile
+RUN pip install --no-cache-dir fastapi mangum soundfile awslambdaric uvicorn python-multipart
 
 # Copy app code
 COPY app /app
 WORKDIR /app
 
-# Lambda entrypoint
+# Set PYTHONPATH to include the app directory
+ENV PYTHONPATH=/app:$PYTHONPATH
+
+# Use the AWS Lambda Runtime Interface Client
+ENTRYPOINT ["python", "-m", "awslambdaric"]
 CMD ["server.lambda_handler"]

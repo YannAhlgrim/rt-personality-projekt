@@ -1,6 +1,7 @@
 version: '3.8'
 services:
-  coqui-tts:
+  coquitts:
+    container_name: coquitts
     build:
       context: ./coquitts
       dockerfile: Dockerfile
@@ -11,6 +12,7 @@ services:
     command: ["python", "server.py"]
 
   whisper:
+    container_name: whisper
     build:
       context: ./whisper
       dockerfile: Dockerfile
