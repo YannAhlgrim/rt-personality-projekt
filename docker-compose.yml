@@ -1,0 +1,23 @@
+version: '3.8'
+services:
+  coqui-tts:
+    build:
+      context: ./coquitts
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - FLASK_ENV=development
+    command: ["python", "server.py"]
+
+  whisper:
+    build:
+      context: ./whisper
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - FLASK_ENV=development
+    command: ["python", "server.py"]
+    volumes:
+      - ./whisper/sample.m4a:/app/sample.m4a

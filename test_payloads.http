@@ -1,0 +1,46 @@
+# Test payloads for manual testing
+
+## Coqui TTS Test
+### POST http://localhost:8000/synthesize
+### Content-Type: application/json
+
+{
+  "text": "Hallo, das ist ein Test der deutschen Sprachsynthese mit Coqui TTS."
+}
+
+### GET http://localhost:8000/health
+
+---
+
+## Whisper Test
+### GET http://localhost:8001/health
+
+### POST http://localhost:8001/transcribe
+### Content-Type: multipart/form-data
+###
+### Upload an audio file with key "file"
+
+---
+
+## Lambda Event Examples
+
+### API Gateway Event for TTS
+```json
+{
+  "httpMethod": "POST",
+  "path": "/synthesize",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"text\": \"Lambda test message\"}"
+}
+```
+
+### API Gateway Event for Whisper Health Check
+```json
+{
+  "httpMethod": "GET",
+  "path": "/health",
+  "headers": {}
+}
+```
