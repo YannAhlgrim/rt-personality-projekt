@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: API Gateway endpoints for RT Personality Project Lambda functions
+
+Parameters:
+  CoquiTTSFunctionName:
+    Type: String
+    Default: personality-projekt-coquitts
+    Description: Name of the Coqui TTS Lambda function
+
+  WhisperFunctionName:
+    Type: String
+    Default: personality-projekt-whisper
+    Description: Name of the Whisper Lambda function
+
+Globals:
+  Api:
+    Cors:
+      AllowMethods: "'POST, OPTIONS'"
+      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      AllowOrigin: "'*'"
+
+Resources:
+  PersonalityProjectApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: personality-projekt-api
+      StageName: prod
+      Description: API for Personality Project services
+      EndpointConfiguration:
+        Type: REGIONAL
+
+  # Lambda Functions (assuming they already exist)
+  TTSFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref CoquiTTSFunctionName
+      Events:
+        TTSApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref PersonalityProjectApi
+            Path: /tts
+            Method: POST
+
+  WhisperFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref WhisperFunctionName
+      Events:
+        WhisperApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref PersonalityProjectApi
+            Path: /whisper
+            Method: POST
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${PersonalityProjectApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiUrl'
+
+  TTSEndpoint:
+    Description: TTS service endpoint
+    Value: !Sub 'https://${PersonalityProjectApi}.execute-api.${AWS::Region}.amazonaws.com/prod/tts'
+
+  WhisperEndpoint:
+    Description: Whisper service endpoint
+    Value: !Sub 'https://${PersonalityProjectApi}.execute-api.${AWS::Region}.amazonaws.com/prod/whisper'

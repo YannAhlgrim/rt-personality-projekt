@@ -23,6 +23,11 @@ Resources:
           Properties:
             Path: /synthesize
             Method: post
+        TTSAlias:
+          Type: Api
+          Properties:
+            Path: /tts
+            Method: post
         HealthCheck:
           Type: Api
           Properties:
@@ -43,6 +48,11 @@ Resources:
           Type: Api
           Properties:
             Path: /transcribe
+            Method: post
+        WhisperAlias:
+          Type: Api
+          Properties:
+            Path: /whisper
             Method: post
         HealthCheck:
           Type: Api

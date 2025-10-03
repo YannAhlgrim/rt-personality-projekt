@@ -4,6 +4,7 @@ import base64
 import tempfile
 import os
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from TTS.api import TTS
 import soundfile as sf
@@ -68,6 +69,25 @@ def synthesize(request: SynthesizeRequest):
 
         return SynthesizeResponse(text=text, audio=audio_b64)
 
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS processing failed: {str(e)}")
+
+@app.post("/tts")
+def tts_binary(request: SynthesizeRequest):
+    """Binary WAV response variant matching original test expectations (/tts)."""
+    try:
+        text = request.text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="No text provided")
+
+        model = get_tts_model()
+        wav = model.tts(text)
+        audio_bytes = io.BytesIO()
+        sf.write(audio_bytes, wav, 22050, format="WAV")
+        audio_bytes.seek(0)
+        return Response(content=audio_bytes.getvalue(), media_type="audio/wav")
     except HTTPException:
         raise
     except Exception as e:

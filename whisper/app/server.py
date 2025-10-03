@@ -1,8 +1,10 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import Body
 from pydantic import BaseModel
 import whisper
 import tempfile
 import os
+import base64
 from mangum import Mangum
 
 app = FastAPI()
@@ -16,6 +18,9 @@ class HealthResponse(BaseModel):
 
 class TranscribeResponse(BaseModel):
     text: str
+
+class Base64Audio(BaseModel):
+    audio_data: str
 
 def get_whisper_model():
     global model
@@ -57,6 +62,24 @@ async def transcribe(file: UploadFile = File(...)):
 
     finally:
         # Clean up temporary file
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+@app.post("/whisper", response_model=TranscribeResponse)
+async def transcribe_base64(payload: Base64Audio):
+    """Accept base64 encoded audio (wav/m4a) similar to original test script."""
+    tmp_path = None
+    try:
+        audio_bytes = base64.b64decode(payload.audio_data)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
+        whisper_model = get_whisper_model()
+        result = whisper_model.transcribe(tmp_path)
+        return TranscribeResponse(text=result["text"])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+    finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
 

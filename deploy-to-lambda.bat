@@ -58,28 +58,71 @@ if errorlevel 1 (
 REM Build and push Docker images
 echo 🐳 Building and pushing Docker images...
 
-REM Login to ECR
-for /f "tokens=*" %%i in ('aws ecr get-login-password --region %AWS_REGION%') do (
-    echo %%i | docker login --username AWS --password-stdin %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com
-)
-
-REM Build images
+REM Build images first
 echo Building Coqui TTS image...
 docker build -t %COQUITTS_REPO_NAME% ./coquitts
+if errorlevel 1 (
+    echo ❌ Failed to build Coqui TTS image
+    exit /b 1
+)
 
 echo Building Whisper image...
 docker build -t %WHISPER_REPO_NAME% ./whisper
+if errorlevel 1 (
+    echo ❌ Failed to build Whisper image
+    exit /b 1
+)
 
 REM Tag images
 docker tag %COQUITTS_REPO_NAME%:latest %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com/%COQUITTS_REPO_NAME%:latest
 docker tag %WHISPER_REPO_NAME%:latest %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com/%WHISPER_REPO_NAME%:latest
 
-REM Push images
+REM Login to ECR (do this right before pushing to minimize token expiry risk)
+echo 🔐 Authenticating with ECR...
+aws ecr get-login-password --region %AWS_REGION% | docker login --username AWS --password-stdin %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com
+if errorlevel 1 (
+    echo ❌ Failed to authenticate with ECR
+    echo Retrying with alternative method...
+    REM Alternative method using temporary file
+    aws ecr get-login-password --region %AWS_REGION% > %TEMP%\ecr_token.txt
+    if errorlevel 1 (
+        echo ❌ Failed to get ECR login password
+        exit /b 1
+    )
+    type %TEMP%\ecr_token.txt | docker login --username AWS --password-stdin %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com
+    del %TEMP%\ecr_token.txt
+    if errorlevel 1 (
+        echo ❌ Failed to authenticate with ECR using alternative method
+        exit /b 1
+    )
+)
+
+REM Push images immediately after authentication
 echo Pushing Coqui TTS image...
 docker push %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com/%COQUITTS_REPO_NAME%:latest
+if errorlevel 1 (
+    echo ❌ Failed to push Coqui TTS image. Retrying authentication...
+    REM Retry authentication and push
+    aws ecr get-login-password --region %AWS_REGION% | docker login --username AWS --password-stdin %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com
+    docker push %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com/%COQUITTS_REPO_NAME%:latest
+    if errorlevel 1 (
+        echo ❌ Failed to push Coqui TTS image after retry
+        exit /b 1
+    )
+)
 
 echo Pushing Whisper image...
 docker push %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com/%WHISPER_REPO_NAME%:latest
+if errorlevel 1 (
+    echo ❌ Failed to push Whisper image. Retrying authentication...
+    REM Retry authentication and push
+    aws ecr get-login-password --region %AWS_REGION% | docker login --username AWS --password-stdin %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com
+    docker push %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com/%WHISPER_REPO_NAME%:latest
+    if errorlevel 1 (
+        echo ❌ Failed to push Whisper image after retry
+        exit /b 1
+    )
+)
 
 echo ✅ Images pushed successfully
 
@@ -100,24 +143,57 @@ echo ⚡ Creating Lambda functions...
 
 set ROLE_ARN=arn:aws:iam::%AWS_ACCOUNT_ID%:role/%LAMBDA_ROLE_NAME%
 
+REM Verify images exist in ECR before creating Lambda functions
+echo 🔍 Verifying images exist in ECR...
+aws ecr describe-images --repository-name %COQUITTS_REPO_NAME% --image-ids imageTag=latest --region %AWS_REGION% >nul 2>&1
+if errorlevel 1 (
+    echo ❌ Coqui TTS image not found in ECR. Please check the push operation.
+    exit /b 1
+)
+
+aws ecr describe-images --repository-name %WHISPER_REPO_NAME% --image-ids imageTag=latest --region %AWS_REGION% >nul 2>&1
+if errorlevel 1 (
+    echo ❌ Whisper image not found in ECR. Please check the push operation.
+    exit /b 1
+)
+echo ✅ Both images verified in ECR
+
 REM Create Coqui TTS function
 aws lambda get-function --function-name %COQUITTS_REPO_NAME% >nul 2>&1
 if errorlevel 1 (
+    echo Creating Lambda function %COQUITTS_REPO_NAME%...
     aws lambda create-function --function-name %COQUITTS_REPO_NAME% --package-type Image --code ImageUri=%AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com/%COQUITTS_REPO_NAME%:latest --role %ROLE_ARN% --timeout 300 --memory-size 2048 --description "Coqui TTS service for personality project"
+    if errorlevel 1 (
+        echo ❌ Failed to create Lambda function %COQUITTS_REPO_NAME%
+        exit /b 1
+    )
     echo ✅ Created Lambda function %COQUITTS_REPO_NAME%
 ) else (
     echo ✅ Lambda function %COQUITTS_REPO_NAME% already exists, updating...
     aws lambda update-function-code --function-name %COQUITTS_REPO_NAME% --image-uri %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com/%COQUITTS_REPO_NAME%:latest
+    if errorlevel 1 (
+        echo ❌ Failed to update Lambda function %COQUITTS_REPO_NAME%
+        exit /b 1
+    )
 )
 
 REM Create Whisper function
 aws lambda get-function --function-name %WHISPER_REPO_NAME% >nul 2>&1
 if errorlevel 1 (
+    echo Creating Lambda function %WHISPER_REPO_NAME%...
     aws lambda create-function --function-name %WHISPER_REPO_NAME% --package-type Image --code ImageUri=%AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com/%WHISPER_REPO_NAME%:latest --role %ROLE_ARN% --timeout 300 --memory-size 2048 --description "Whisper transcription service for personality project"
+    if errorlevel 1 (
+        echo ❌ Failed to create Lambda function %WHISPER_REPO_NAME%
+        exit /b 1
+    )
     echo ✅ Created Lambda function %WHISPER_REPO_NAME%
 ) else (
     echo ✅ Lambda function %WHISPER_REPO_NAME% already exists, updating...
     aws lambda update-function-code --function-name %WHISPER_REPO_NAME% --image-uri %AWS_ACCOUNT_ID%.dkr.ecr.%AWS_REGION%.amazonaws.com/%WHISPER_REPO_NAME%:latest
+    if errorlevel 1 (
+        echo ❌ Failed to update Lambda function %WHISPER_REPO_NAME%
+        exit /b 1
+    )
 )
 
 echo.
