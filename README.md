@@ -84,6 +84,153 @@ docker run -p 8000:8000 coqui-tts
 docker run -p 8001:8001 whisper
 ```
 
+## ☁️ AWS Lambda Deployment
+
+### Prerequisites
+- AWS CLI configured with appropriate permissions
+- Docker installed and running
+- AWS account with Lambda and ECR access
+
+### Deploy to AWS Lambda (Container Images)
+
+#### Step 1: Create ECR Repositories
+```bash
+# Create repositories for both services
+aws ecr create-repository --repository-name personality-projekt-coquitts --region us-east-1
+aws ecr create-repository --repository-name personality-projekt-whisper --region us-east-1
+```
+
+#### Step 2: Build and Push Docker Images
+```bash
+# Get ECR login token
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 637423503101.dkr.ecr.us-east-1.amazonaws.com
+
+# Build and tag images
+docker build -t personality-projekt-coquitts ./coquitts
+docker build -t personality-projekt-whisper ./whisper
+
+docker tag personality-projekt-coquitts:latest 637423503101.dkr.ecr.us-east-1.amazonaws.com/personality-projekt-coquitts:latest
+docker tag personality-projekt-whisper:latest 637423503101.dkr.ecr.us-east-1.amazonaws.com/personality-projekt-whisper:latest
+
+# Push images
+docker push 637423503101.dkr.ecr.us-east-1.amazonaws.com/personality-projekt-coquitts:latest
+docker push 637423503101.dkr.ecr.us-east-1.amazonaws.com/personality-projekt-whisper:latest
+```
+
+#### Step 3: Create Lambda Functions
+```bash
+# Create Coqui TTS Lambda function
+aws lambda create-function \
+    --function-name personality-projekt-coquitts \
+    --package-type Image \
+    --code ImageUri=637423503101.dkr.ecr.us-east-1.amazonaws.com/personality-projekt-coquitts:latest \
+    --role arn:aws:iam::637423503101:role/LabRole \
+    --timeout 300 \
+    --memory-size 2048
+
+# Create Whisper Lambda function
+aws lambda create-function \
+    --function-name personality-projekt-whisper \
+    --package-type Image \
+    --code ImageUri=637423503101.dkr.ecr.us-east-1.amazonaws.com/personality-projekt-whisper:latest \
+    --role arn:aws:iam::637423503101:role/LabRole \
+    --timeout 300 \
+    --memory-size 2048
+```
+
+#### Step 4: Create API Gateway (Optional)
+```bash
+# Create REST API
+aws apigateway create-rest-api --name personality-projekt-api
+
+# Configure resources and methods for /synthesize and /transcribe endpoints
+# (Detailed API Gateway configuration would require additional steps)
+```
+
+### Alternative: Deploy with AWS SAM
+
+#### Step 1: Update template.yaml
+Make sure your `template.yaml` has the correct image URIs:
+```yaml
+Resources:
+  CoquiTTSFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageUri: 637423503101.dkr.ecr.us-east-1.amazonaws.com/personality-projekt-coquitts:latest
+      # ... rest of configuration
+
+  WhisperFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageUri: 637423503101.dkr.ecr.us-east-1.amazonaws.com/personality-projekt-whisper:latest
+      # ... rest of configuration
+```
+
+#### Step 2: Deploy with SAM
+```bash
+# Build and deploy
+sam build
+sam deploy --guided
+
+# For subsequent deployments
+sam deploy
+```
+
+### Update Existing Functions
+```bash
+# Update function code when you make changes
+aws lambda update-function-code \
+    --function-name personality-projekt-coquitts \
+    --image-uri 637423503101.dkr.ecr.us-east-1.amazonaws.com/personality-projekt-coquitts:latest
+
+aws lambda update-function-code \
+    --function-name personality-projekt-whisper \
+    --image-uri 637423503101.dkr.ecr.us-east-1.amazonaws.com/personality-projekt-whisper:latest
+```
+
+### Required IAM Role
+This deployment uses the existing `LabRole` which should already have the necessary permissions:
+- Lambda execution permissions
+- CloudWatch Logs access
+- ECR access for pulling container images
+
+Role ARN: `arn:aws:iam::637423503101:role/LabRole`
+
+**Note**: Make sure the `LabRole` exists in your AWS account and has the required Lambda execution permissions.
+
+### � Quick Deployment Scripts
+
+For easier deployment, use the provided scripts:
+
+**Linux/macOS:**
+```bash
+# Make script executable and run
+chmod +x deploy-to-lambda.sh
+./deploy-to-lambda.sh
+```
+
+**Windows:**
+```cmd
+# Run the batch script
+deploy-to-lambda.bat
+```
+
+These scripts will automatically:
+- Create ECR repositories
+- Build and push Docker images
+- Create IAM roles
+- Deploy Lambda functions
+- Run basic health checks
+
+### �💡 Deployment Tips
+- **Image Size**: Lambda container images have a 10GB limit
+- **Cold Starts**: First invocation after idle will download models
+- **Memory**: Use at least 2GB RAM for both functions
+- **Timeout**: Set to 5+ minutes for model loading
+- **Environment Variables**: Configure model settings via Lambda environment variables
+
 ## 📝 Notes
 
 1. **Model Download**: First run will download models (can take time)
